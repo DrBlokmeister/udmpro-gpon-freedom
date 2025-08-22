@@ -1,0 +1,5 @@
+title: "UDM Pro + GPON SFP on Freedom (KPN GPON)"
+description: "Step-by-step guide: replace Huawei ONT with a GPON SFP stick on a UniFi Dream Machine Pro (Freedom Internet via KPN GPON). Includes management VLAN 192.168.1.x, serial cloning, VLAN/PPPoE notes, and troubleshooting."
+theme: jekyll-theme-minimal
+plugins:
+  - jekyll-sitemap
