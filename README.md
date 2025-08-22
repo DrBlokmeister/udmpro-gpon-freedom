@@ -1,46 +1,122 @@
-# Reference guides:
+# Replacing a Huawei ONT with a GPON SFP stick on a UniFi Dream Machine Pro (Freedom Internet / KPN GPON)
+
+> Step-by-step notes from my own Dutch UniFi setup. This mostly follows the two excellent guides below, but fills in a few missing, *finnicky* steps—especially getting management access to the SFP.
+
+## Reference guides
 - https://tweak-cd.mr-d.nl/eigen-gpon-sfp-op-een-udmpro/
 - https://www.techconnect.nl/blog/11327/freedom-internet-icm-gpon-sfp-stick-met-unifi/
 
-These guides are already very good and I used them as a guide. This guide mostly follows these guides, so credits go to the authors. However I found them lacking slightly at some points.
+Credits to the authors of those posts—I used them as the base and add the bits I wish I’d known.
 
-I purchased this stick: https://www.fs.com/de-en/products/133619.html (	GPON ONU Stick with MAC SFP 1310nm-TX/1490nm-RX 1.244G-TX/2.488G-RX Class B+ 20km DOM Simplex SC/APC SMF Optical Transceiver Module (Industrial))
+## Hardware I used
+- **FS GPON ONU Stick with MAC SFP (Industrial)**  
+  https://www.fs.com/de-en/products/133619.html  
+  *1310 nm TX / 1490 nm RX, Class B+, DOM, simplex SC/APC.*
 
-Remember that during the next steps, your internet connection will be down.
+> ⚠️ Your internet will be **down** during this process.
 
-First you have to read out the serial number of the Huawei ONT. This requires a direct wire connection to the ONT. Then if I remember correctly you have to give your device a fixed IP (in the 192.168.18.X range). Afterwards you can use your favorite browser to navigate to http://192.168.18.1 (username: Epuser, password: userEp). Navigate to Status > Device Information and look for the SN field. Copy the number that has the HWT prefix, you will need this for the next step.
+---
 
-Now we have the required serial number that Freedom expects, we need to spoof the serial number of our GPON stick. 
+## 1) Read the serial number from the Huawei ONT
+You need the ONT’s GPON serial (the one Freedom/KPN expects).
 
-The step I was missing in the guides is that in order to connect to the GPON stick, you have to connect to it on IP 192.168.1.10, requiring you to connect the stick to a switch/router port with this subnet. With Unifi you can go to Settings > Networks and press New Virtual Network. Give it the Host Address of 192.168.1.1. I think you can leave everything else on default, don't forget to save your settings.
+1. Connect a PC directly to the ONT (Ethernet).
+2. Give your PC a static IP in **192.168.18.x**.
+3. Browse to **http://192.168.18.1**  
+   - **Username**: `Epuser`  
+   - **Password**: `userEp`
+4. Go to **Status → Device Information** and copy the **SN** with the **HWT** prefix (e.g. `HWTXXXXXXXX`). You’ll clone this onto the SFP.
 
-Note: it was quite some hit or miss in order to connect to the GPON stick successfully. Sometimes I had to reseat the stick or switch to a different port. In the end the connection was OK and I could connect. But be advised that this might be quite finnicky.
+---
 
-Then plug in the GPON stick to an SFP port on your router, and assign this port to your newly created 192.168.1.X network. The GPON stick requires an active fiber in order to come online, so connect your provider's to the stick.
-Then also connect your own machine (laptop/phone/potato) to your router and ensure that the connected port is also set to this newly created network. This ensures that both the GPON stick and your machine are on the same network.
+## 2) Create a temporary management network for the SFP (192.168.1.0/24)
+Most GPON SFP sticks expose a tiny management interface at **192.168.1.10**. Put the stick **and** your client in that subnet.
 
-Then SSH into the stick:
-ssh -oHostKeyAlgorithms=+ssh-dss -oKexAlgorithms=diffie-hellman-group14-sha1 192.168.1.10 -l ONTUSER
-The password is 7sp!lwUBz1
+**UniFi → Settings → Networks → “Create New Network”:**
+- Name: `SFP-Management` (or anything)
+- Gateway/Subnet: `192.168.1.1/24`
+- DHCP: enabled (default is fine)
 
-Then set the new serial number using:
+Then:
+- Plug the GPON SFP into a UDM Pro SFP port.
+- Assign that switch port the **SFP-Management** network (Port Manager).
+- Connect your laptop/phone to another port **also** set to **SFP-Management**.
+
+> ⚠️ Gotcha: the stick often only comes fully up with **live fiber** connected. Attach your provider fiber (SC/APC) while doing this.
+
+---
+
+## 3) SSH into the GPON SFP and clone the serial
+Default management IP: **192.168.1.10**
+
+```bash
+ssh -oHostKeyAlgorithms=+ssh-dss \
+    -oKexAlgorithms=diffie-hellman-group14-sha1 \
+    ONTUSER@192.168.1.10
+````
+
+**Password:**
+
+```
+7sp!lwUBz1
+```
+
+Set the serial (replace with your `HWTXXXXXXXX`):
+
+```bash
 set_serial_number HWTXXXXXXXX
+```
 
-You can check if you were successful by checking:
+Verify (this may **not** update immediately, see notes below):
+
+```bash
 fw_printenv | grep nSerial
+```
 
-Which in my case didn't work, it just printed the old serial number.
+If needed, try the I²C helper:
 
-I tried again using an sfp_i2c command:
-sfp_i2c -i8 -s "HWTXXXXXXXXX"
+```bash
+sfp_i2c -i8 -s "HWTXXXXXXXX"
+```
 
-But even then the fw_printenv command gave me the old serial number.
+Then re-check:
 
-I reseated the GPON stick and reseated the fiber a couple of times in order to connect to it again.
+```bash
+fw_printenv | grep nSerial
+```
 
-Afterwards I ssh'd to the stick again and attempted a serial number change again:
-set_serial_number HWTXXXXXXXX
+> **Reality check:** I had to reseat the SFP and fiber a couple of times before the new serial “stuck”. Don’t panic if `fw_printenv` shows the old value at first—try again, power-cycle, reseat, and re-run `set_serial_number`.
 
-Which was successful.
+---
 
-Now I tried to switch over my WAN network to the stick (ensure that the IPv4 and vlan settings are set correctly), but this would not succeed. My UDM Pro did not recognise the stick anymore, with or without a fiber attached. Reseating did not help. I decided to give up for a few weeks. Then yesterday I checked the port manager and suddenly saw the GPON stick. I switched the fiber over expecting the internet to drop out, but everything worked flawlessly.
+## 4) Move WAN to the GPON SFP
+
+Switch your **WAN** to the SFP port and apply the same Internet settings you used with the Huawei ONT:
+
+* **KPN/Freedom GPON** typically uses **VLAN 6** and **PPPoE** (use your Freedom credentials).
+* Keep the rest identical to your working ONT setup.
+
+**In my case, the UDM Pro initially didn’t “see” the stick after the change—even with the fiber in. A few reseats later I gave up. **Weeks later**, the Port Manager suddenly showed the GPON stick; I swapped the fiber over and… everything worked flawlessly.**
+
+---
+
+## Troubleshooting notes & “things the guides didn’t say”
+
+* **Management VLAN is key**: You must place both your client and the SFP in **192.168.1.0/24** to reach **192.168.1.10**.
+* **Live fiber helps boot**: Some sticks won’t expose management or apply SN reliably until an optical link is present.
+* **Be patient with SN changes**: `fw_printenv` may not reflect the new value until a reseat/power-cycle. Re-run `set_serial_number`.
+* **Port flakiness**: If the SFP isn’t detected, try another SFP cage or switch port, reseat, and check Port Manager again.
+* **Keep WAN identical**: Use the same VLAN/PPPoE/DHCP details that worked with the ONT; only the physical ONT changes.
+
+---
+
+## Why publish this?
+
+I wanted a single, practical checklist that an actual UniFi user (Freedom/KPN in NL) could follow without guesswork. If you spot mistakes or have a different stick/OLT combo, open an issue or PR!
+
+## Acknowledgements
+
+* [https://tweak-cd.mr-d.nl/eigen-gpon-sfp-op-een-udmpro/](https://tweak-cd.mr-d.nl/eigen-gpon-sfp-op-een-udmpro/)
+* [https://www.techconnect.nl/blog/11327/freedom-internet-icm-gpon-sfp-stick-met-unifi/](https://www.techconnect.nl/blog/11327/freedom-internet-icm-gpon-sfp-stick-met-unifi/)
+
+````
