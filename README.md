@@ -96,7 +96,9 @@ Switch your **WAN** to the SFP port and apply the same Internet settings you use
 * **KPN/Freedom GPON** typically uses **VLAN 6** and **PPPoE** (use your Freedom credentials).
 * Keep the rest identical to your working ONT setup.
 
-**In my case, the UDM Pro initially didn’t “see” the stick after the change—even with the fiber in. A few reseats later I gave up. **Weeks later**, the Port Manager suddenly showed the GPON stick; I swapped the fiber over and… everything worked flawlessly.**
+## 5) Initial failure
+**In my case, the UDM Pro initially didn’t “see” the stick after the change—even with the fiber in. A few reseats later I gave up.**
+**Weeks later, the Port Manager suddenly showed the GPON stick; I swapped the fiber over and… everything worked flawlessly.**
 
 ---
 
